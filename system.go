@@ -23,18 +23,6 @@ type (
 	Interceptor func(Message)
 )
 
-type systemOption struct {
-	interceptor Interceptor
-}
-
-type SystemOption func(systemOption)
-
-func WithInterceptor(interceptor Interceptor) SystemOption {
-	return func(mbo systemOption) {
-		mbo.interceptor = interceptor
-	}
-}
-
 type System interface {
 	Spawn(actor Actor, capacity int) ID
 	Send(id ID, message Message) error
@@ -45,6 +33,7 @@ type (
 		mailbox mailbox
 		id      chan ID
 	}
+
 	sendMessage struct {
 		id      ID
 		message Message
@@ -60,6 +49,7 @@ var (
 			}
 		},
 	}
+
 	sendMessagePool = sync.Pool{
 		New: func() interface{} {
 			return &sendMessage{
@@ -68,13 +58,6 @@ var (
 		},
 	}
 )
-
-type system struct {
-	nextID          ID
-	addActorLane    chan *addActor
-	removeActorLane chan ID
-	sendMessageLane chan *sendMessage
-}
 
 type context struct {
 	id      ID
@@ -87,6 +70,22 @@ func (ctx context) Self() ID {
 
 func (ctx context) Message() Message {
 	return ctx.message
+}
+
+type SystemOption func(*system)
+
+func WithInterceptor(interceptor Interceptor) SystemOption {
+	return func(s *system) {
+		s.interceptor = interceptor
+	}
+}
+
+type system struct {
+	nextID          ID
+	addActorLane    chan *addActor
+	removeActorLane chan ID
+	sendMessageLane chan *sendMessage
+	interceptor     Interceptor
 }
 
 func (sys *system) Spawn(actor Actor, capacity int) ID {
@@ -122,6 +121,9 @@ func NewSystem(options ...SystemOption) System {
 		removeActorLane: make(chan ID),
 		sendMessageLane: make(chan *sendMessage, defaultMessageLaneCapacity),
 	}
+	for _, option := range options {
+		option(sys)
+	}
 	go func() {
 		mailboxes := make(map[ID]mailbox)
 		for {
@@ -139,6 +141,9 @@ func NewSystem(options ...SystemOption) System {
 				}
 			case m := <-sys.sendMessageLane:
 				if mb, ok := mailboxes[m.id]; ok {
+					if sys.interceptor != nil {
+						sys.interceptor(m.message)
+					}
 					m.error <- mb.Put(m.message)
 				} else {
 					m.error <- ErrActorNotFound
