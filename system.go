@@ -7,13 +7,18 @@ import (
 const defaultMessageLaneCapacity = 1000
 
 type (
+	ID uint64
+
 	Message interface{}
 
-	Actor interface {
-		Receive(Message)
+	Context interface {
+		Self() ID
+		Message() Message
 	}
 
-	ID uint64
+	Actor interface {
+		Receive(context Context)
+	}
 
 	Interceptor func(Message)
 )
@@ -71,19 +76,32 @@ type system struct {
 	sendMessageLane chan *sendMessage
 }
 
+type context struct {
+	id      ID
+	message Message
+}
+
+func (ctx context) Self() ID {
+	return ctx.id
+}
+
+func (ctx context) Message() Message {
+	return ctx.message
+}
+
 func (sys *system) Spawn(actor Actor, capacity int) ID {
 	aa := addActorPool.Get().(*addActor)
 	mailbox := newMailbox(capacity)
-	go func() {
-		for {
-			m := mailbox.Get()
-			actor.Receive(m)
-		}
-	}()
 	aa.mailbox = mailbox
 	sys.addActorLane <- aa
 	id := <-aa.id
 	addActorPool.Put(aa)
+	go func() {
+		for {
+			ctx := context{id: id, message: mailbox.Get()}
+			actor.Receive(ctx)
+		}
+	}()
 	return id
 }
 
