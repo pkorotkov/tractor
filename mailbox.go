@@ -6,7 +6,7 @@ func newMailbox(capacity int) mailbox {
 	return make(chan interface{}, capacity)
 }
 
-func (mb mailbox) Put(message interface{}) (err error) {
+func (mb mailbox) Put(message Message) (err error) {
 	select {
 	case mb <- message:
 	default:
@@ -15,6 +15,6 @@ func (mb mailbox) Put(message interface{}) (err error) {
 	return
 }
 
-func (mb mailbox) Get() interface{} {
+func (mb mailbox) Get() Message {
 	return <-mb
 }
