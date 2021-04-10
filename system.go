@@ -31,8 +31,8 @@ func WithInterceptor(interceptor Interceptor) SystemOption {
 }
 
 type System interface {
-	Spawn(Actor, int) ID
-	Send(ID, Message) error
+	Spawn(actor Actor, capacity int) ID
+	Send(id ID, message Message) error
 }
 
 type (
