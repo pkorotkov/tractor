@@ -26,6 +26,7 @@ type (
 type System interface {
 	Spawn(actor Actor, capacity int) ID
 	Send(id ID, message Message) error
+	Stop(id ID)
 }
 
 type (
