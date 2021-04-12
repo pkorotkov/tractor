@@ -1,9 +1,9 @@
 package tractor
 
-type mailbox chan interface{}
+type mailbox chan Message
 
 func newMailbox(capacity int) mailbox {
-	return make(chan interface{}, capacity)
+	return make(chan Message, capacity)
 }
 
 func (mb mailbox) Put(message Message) (err error) {
@@ -15,6 +15,6 @@ func (mb mailbox) Put(message Message) (err error) {
 	return
 }
 
-func (mb mailbox) Get() Message {
-	return <-mb
+func (mb mailbox) C() <-chan Message {
+	return mb
 }

@@ -96,8 +96,8 @@ func (sys *system) Spawn(actor Actor, capacity int) ID {
 	id := <-aa.id
 	addActorPool.Put(aa)
 	go func() {
-		for {
-			ctx := context{id: id, message: mailbox.Get()}
+		for message := range mailbox.C() {
+			ctx := context{id, message}
 			actor.Receive(ctx)
 		}
 	}()
@@ -112,6 +112,10 @@ func (sys *system) Send(id ID, message Message) error {
 	err := <-m.error
 	sendMessagePool.Put(m)
 	return err
+}
+
+func (sys *system) Stop(id ID) {
+	sys.removeActorLane <- id
 }
 
 func NewSystem(options ...SystemOption) System {
@@ -134,19 +138,18 @@ func NewSystem(options ...SystemOption) System {
 				sys.nextID += 1
 				aa.id <- id
 			case id := <-sys.removeActorLane:
-				if a, ok := mailboxes[id]; ok {
-					// TODO
-					_ = a
+				if mb, ok := mailboxes[id]; ok {
 					delete(mailboxes, id)
+					close(mb)
 				}
-			case m := <-sys.sendMessageLane:
-				if mb, ok := mailboxes[m.id]; ok {
+			case sm := <-sys.sendMessageLane:
+				if mb, ok := mailboxes[sm.id]; ok {
 					if sys.interceptor != nil {
-						sys.interceptor(m.message)
+						sys.interceptor(sm.message)
 					}
-					m.error <- mb.Put(m.message)
+					sm.error <- mb.Put(sm.message)
 				} else {
-					m.error <- ErrActorNotFound
+					sm.error <- ErrActorNotFound
 				}
 			}
 		}
