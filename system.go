@@ -20,19 +20,26 @@ type (
 		Receive(context Context)
 	}
 
+	ActorConstructor func() Actor
+
 	Interceptor func(Message)
 )
 
 type System interface {
-	Spawn(actor Actor, capacity int) ID
+	Spawn(actorConstructor ActorConstructor, capacity int) ID
 	Send(id ID, message Message) error
-	Stop(id ID)
+	Stop(id ID, callback func())
 }
 
 type (
 	addActor struct {
 		mailbox mailbox
 		id      chan ID
+	}
+
+	removeActor struct {
+		id   ID
+		done chan struct{}
 	}
 
 	sendMessage struct {
@@ -45,17 +52,19 @@ type (
 var (
 	addActorPool = sync.Pool{
 		New: func() interface{} {
-			return &addActor{
-				id: make(chan ID),
-			}
+			return &addActor{id: make(chan ID)}
+		},
+	}
+
+	removeActorPool = sync.Pool{
+		New: func() interface{} {
+			return &removeActor{done: make(chan struct{})}
 		},
 	}
 
 	sendMessagePool = sync.Pool{
 		New: func() interface{} {
-			return &sendMessage{
-				error: make(chan error),
-			}
+			return &sendMessage{error: make(chan error)}
 		},
 	}
 )
@@ -84,12 +93,12 @@ func WithInterceptor(interceptor Interceptor) SystemOption {
 type system struct {
 	nextID          ID
 	addActorLane    chan *addActor
-	removeActorLane chan ID
+	removeActorLane chan *removeActor
 	sendMessageLane chan *sendMessage
 	interceptor     Interceptor
 }
 
-func (sys *system) Spawn(actor Actor, capacity int) ID {
+func (sys *system) Spawn(actorConstructor ActorConstructor, capacity int) ID {
 	aa := addActorPool.Get().(*addActor)
 	mailbox := newMailbox(capacity)
 	aa.mailbox = mailbox
@@ -97,6 +106,7 @@ func (sys *system) Spawn(actor Actor, capacity int) ID {
 	id := <-aa.id
 	addActorPool.Put(aa)
 	go func() {
+		actor := actorConstructor()
 		for message := range mailbox.C() {
 			ctx := context{id, message}
 			actor.Receive(ctx)
@@ -115,15 +125,22 @@ func (sys *system) Send(id ID, message Message) error {
 	return err
 }
 
-func (sys *system) Stop(id ID) {
-	sys.removeActorLane <- id
+func (sys *system) Stop(id ID, callback func()) {
+	m := removeActorPool.Get().(*removeActor)
+	m.id = id
+	sys.removeActorLane <- m
+	<-m.done
+	removeActorPool.Put(m)
+	if callback != nil {
+		callback()
+	}
 }
 
 func NewSystem(options ...SystemOption) System {
 	sys := &system{
 		nextID:          1,
 		addActorLane:    make(chan *addActor),
-		removeActorLane: make(chan ID),
+		removeActorLane: make(chan *removeActor),
 		sendMessageLane: make(chan *sendMessage, defaultMessageLaneCapacity),
 	}
 	for _, option := range options {
@@ -138,11 +155,12 @@ func NewSystem(options ...SystemOption) System {
 				mailboxes[id] = aa.mailbox
 				sys.nextID += 1
 				aa.id <- id
-			case id := <-sys.removeActorLane:
-				if mb, ok := mailboxes[id]; ok {
-					delete(mailboxes, id)
+			case ra := <-sys.removeActorLane:
+				if mb, ok := mailboxes[ra.id]; ok {
+					delete(mailboxes, ra.id)
 					close(mb)
 				}
+				ra.done <- struct{}{}
 			case sm := <-sys.sendMessageLane:
 				if mb, ok := mailboxes[sm.id]; ok {
 					if sys.interceptor != nil {
