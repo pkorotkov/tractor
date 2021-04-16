@@ -26,7 +26,7 @@ type (
 type System interface {
 	Spawn(actor Actor, capacity int) ID
 	Send(id ID, message Message) error
-	Stop(id ID, callback func())
+	Stop(id ID)
 }
 
 type (
@@ -83,8 +83,14 @@ func (ctx context) Message() Message {
 type SystemOption func(*system)
 
 func WithInterceptor(interceptor Interceptor) SystemOption {
-	return func(s *system) {
-		s.interceptor = interceptor
+	return func(sys *system) {
+		sys.interceptor = interceptor
+	}
+}
+
+func WithStopCallback(callback func()) SystemOption {
+	return func(sys *system) {
+		sys.stopCallback = callback
 	}
 }
 
@@ -94,6 +100,7 @@ type system struct {
 	removeActorLane chan *removeActor
 	sendMessageLane chan *sendMessage
 	interceptor     Interceptor
+	stopCallback    func()
 }
 
 func (sys *system) Spawn(actor Actor, capacity int) ID {
@@ -122,14 +129,14 @@ func (sys *system) Send(id ID, message Message) error {
 	return err
 }
 
-func (sys *system) Stop(id ID, callback func()) {
+func (sys *system) Stop(id ID) {
 	m := removeActorPool.Get().(*removeActor)
 	m.id = id
 	sys.removeActorLane <- m
 	<-m.done
 	removeActorPool.Put(m)
-	if callback != nil {
-		callback()
+	if sys.stopCallback != nil {
+		sys.stopCallback()
 	}
 }
 
