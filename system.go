@@ -18,6 +18,7 @@ type (
 
 	Actor interface {
 		Receive(context Context)
+		StopCallback() func()
 	}
 
 	Interceptor func(Message)
@@ -88,19 +89,12 @@ func WithInterceptor(interceptor Interceptor) SystemOption {
 	}
 }
 
-func WithStopCallback(callback func()) SystemOption {
-	return func(sys *system) {
-		sys.stopCallback = callback
-	}
-}
-
 type system struct {
 	nextID          ID
 	addActorLane    chan *addActor
 	removeActorLane chan *removeActor
 	sendMessageLane chan *sendMessage
 	interceptor     Interceptor
-	stopCallback    func()
 }
 
 func (sys *system) Spawn(actor Actor, capacity int) ID {
@@ -114,6 +108,9 @@ func (sys *system) Spawn(actor Actor, capacity int) ID {
 		for message := range mailbox.C() {
 			ctx := context{id, message}
 			actor.Receive(ctx)
+		}
+		if cb := actor.StopCallback(); cb != nil {
+			cb()
 		}
 	}()
 	return id
@@ -135,9 +132,6 @@ func (sys *system) Stop(id ID) {
 	sys.removeActorLane <- m
 	<-m.done
 	removeActorPool.Put(m)
-	if sys.stopCallback != nil {
-		sys.stopCallback()
-	}
 }
 
 func NewSystem(options ...SystemOption) System {
