@@ -20,13 +20,11 @@ type (
 		Receive(context Context)
 	}
 
-	ActorConstructor func() Actor
-
 	Interceptor func(Message)
 )
 
 type System interface {
-	Spawn(actorConstructor ActorConstructor, capacity int) ID
+	Spawn(actor Actor, capacity int) ID
 	Send(id ID, message Message) error
 	Stop(id ID, callback func())
 }
@@ -98,7 +96,7 @@ type system struct {
 	interceptor     Interceptor
 }
 
-func (sys *system) Spawn(actorConstructor ActorConstructor, capacity int) ID {
+func (sys *system) Spawn(actor Actor, capacity int) ID {
 	aa := addActorPool.Get().(*addActor)
 	mailbox := newMailbox(capacity)
 	aa.mailbox = mailbox
@@ -106,7 +104,6 @@ func (sys *system) Spawn(actorConstructor ActorConstructor, capacity int) ID {
 	id := <-aa.id
 	addActorPool.Put(aa)
 	go func() {
-		actor := actorConstructor()
 		for message := range mailbox.C() {
 			ctx := context{id, message}
 			actor.Receive(ctx)
