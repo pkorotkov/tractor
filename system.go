@@ -27,6 +27,7 @@ type (
 type System interface {
 	Spawn(actor Actor, capacity int) ID
 	Send(id ID, message Message) error
+	CurrentIDs() []ID
 	Stop(id ID)
 }
 
@@ -46,6 +47,8 @@ type (
 		message Message
 		error   chan error
 	}
+
+	currentIDs chan []ID
 )
 
 var (
@@ -64,6 +67,12 @@ var (
 	sendMessagePool = sync.Pool{
 		New: func() interface{} {
 			return &sendMessage{error: make(chan error)}
+		},
+	}
+
+	currentIDsPool = sync.Pool{
+		New: func() interface{} {
+			return make(chan []ID)
 		},
 	}
 )
@@ -100,6 +109,7 @@ type system struct {
 	addActorLane    chan *addActor
 	removeActorLane chan *removeActor
 	sendMessageLane chan *sendMessage
+	currentIDsLane  chan currentIDs
 	interceptor     Interceptor
 }
 
@@ -139,11 +149,20 @@ func (sys *system) Stop(id ID) {
 	removeActorPool.Put(m)
 }
 
+func (sys *system) CurrentIDs() []ID {
+	m := currentIDsPool.Get().(chan []ID)
+	sys.currentIDsLane <- m
+	ids := <-m
+	currentIDsPool.Put(m)
+	return ids
+}
+
 func NewSystem(options ...SystemOption) System {
 	sys := &system{
 		nextID:          1,
 		addActorLane:    make(chan *addActor),
 		removeActorLane: make(chan *removeActor),
+		currentIDsLane:  make(chan currentIDs),
 	}
 	for _, option := range options {
 		option(sys)
@@ -175,6 +194,12 @@ func NewSystem(options ...SystemOption) System {
 				} else {
 					sm.error <- ErrActorNotFound
 				}
+			case cids := <-sys.currentIDsLane:
+				ids := make([]ID, 0, len(mailboxes))
+				for id := range mailboxes {
+					ids = append(ids, id)
+				}
+				cids <- ids
 			}
 		}
 	}()
