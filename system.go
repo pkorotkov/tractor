@@ -17,7 +17,7 @@ type (
 	}
 
 	Actor interface {
-		Receive(context Context)
+		Receive(Context)
 		StopCallback() func()
 	}
 
@@ -106,11 +106,10 @@ func (sys *system) Spawn(actor Actor, capacity int) ID {
 	addActorPool.Put(aa)
 	go func() {
 		for message := range mailbox.C() {
-			ctx := context{id, message}
-			actor.Receive(ctx)
+			actor.Receive(context{id, message})
 		}
-		if cb := actor.StopCallback(); cb != nil {
-			cb()
+		if scb := actor.StopCallback(); scb != nil {
+			scb()
 		}
 	}()
 	return id
