@@ -83,6 +83,12 @@ func (ctx context) Message() Message {
 
 type SystemOption func(*system)
 
+func WithMessageBufferCapacity(capacity int) SystemOption {
+	return func(sys *system) {
+		sys.sendMessageLane = make(chan *sendMessage, capacity)
+	}
+}
+
 func WithInterceptor(interceptor Interceptor) SystemOption {
 	return func(sys *system) {
 		sys.interceptor = interceptor
@@ -138,10 +144,12 @@ func NewSystem(options ...SystemOption) System {
 		nextID:          1,
 		addActorLane:    make(chan *addActor),
 		removeActorLane: make(chan *removeActor),
-		sendMessageLane: make(chan *sendMessage, defaultMessageLaneCapacity),
 	}
 	for _, option := range options {
 		option(sys)
+	}
+	if sys.sendMessageLane == nil {
+		sys.sendMessageLane = make(chan *sendMessage, defaultMessageLaneCapacity)
 	}
 	go func() {
 		mailboxes := make(map[ID]mailbox)
