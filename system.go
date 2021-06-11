@@ -49,6 +49,11 @@ type (
 	}
 
 	currentIDs chan []ID
+
+	mailboxSize struct {
+		id   ID
+		size chan int
+	}
 )
 
 var (
@@ -73,6 +78,12 @@ var (
 	currentIDsPool = sync.Pool{
 		New: func() interface{} {
 			return make(chan []ID)
+		},
+	}
+
+	mailboxSizePool = sync.Pool{
+		New: func() interface{} {
+			return &mailboxSize{size: make(chan int)}
 		},
 	}
 )
@@ -110,9 +121,12 @@ type system struct {
 	removeActorLane chan *removeActor
 	sendMessageLane chan *sendMessage
 	currentIDsLane  chan currentIDs
+	mailboxSizeLane chan *mailboxSize
 	interceptor     Interceptor
 }
 
+// Spawn starts running the given actor with the mailbox capacity
+// at the system.
 func (sys *system) Spawn(actor Actor, capacity int) ID {
 	aa := addActorPool.Get().(*addActor)
 	mailbox := newMailbox(capacity)
@@ -131,6 +145,8 @@ func (sys *system) Spawn(actor Actor, capacity int) ID {
 	return id
 }
 
+// Send sends the message to an actor with the given ID.
+// If the actor is not found, it returns `ErrActorNotFound`.
 func (sys *system) Send(id ID, message Message) error {
 	m := sendMessagePool.Get().(*sendMessage)
 	m.id = id
@@ -141,6 +157,7 @@ func (sys *system) Send(id ID, message Message) error {
 	return err
 }
 
+// Stop stops an actor with the given ID.
 func (sys *system) Stop(id ID) {
 	m := removeActorPool.Get().(*removeActor)
 	m.id = id
@@ -149,6 +166,7 @@ func (sys *system) Stop(id ID) {
 	removeActorPool.Put(m)
 }
 
+// CurrentIDs returns the IDs currently running at the system.
 func (sys *system) CurrentIDs() []ID {
 	m := currentIDsPool.Get().(chan []ID)
 	sys.currentIDsLane <- m
@@ -157,12 +175,25 @@ func (sys *system) CurrentIDs() []ID {
 	return ids
 }
 
+// MailboxSize return the number of currently pending messages
+// in the actor's mailbox (i.e. internal buffer).
+func (sys *system) MailboxSize(id ID) int {
+	m := mailboxSizePool.Get().(*mailboxSize)
+	m.id = id
+	sys.mailboxSizeLane <- m
+	size := <-m.size
+	mailboxSizePool.Put(m)
+	return size
+}
+
+// NewSystem create a new system ready to spawn actors onto.
 func NewSystem(options ...SystemOption) System {
 	sys := &system{
 		nextID:          1,
 		addActorLane:    make(chan *addActor),
 		removeActorLane: make(chan *removeActor),
 		currentIDsLane:  make(chan currentIDs),
+		mailboxSizeLane: make(chan *mailboxSize),
 	}
 	for _, option := range options {
 		option(sys)
@@ -200,6 +231,12 @@ func NewSystem(options ...SystemOption) System {
 					ids = append(ids, id)
 				}
 				cids <- ids
+			case mbs := <-sys.mailboxSizeLane:
+				var size int
+				if mb, ok := mailboxes[mbs.id]; ok {
+					size = len(mb)
+				}
+				mbs.size <- size
 			}
 		}
 	}()
