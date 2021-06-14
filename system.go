@@ -28,6 +28,7 @@ type System interface {
 	Spawn(actor Actor, capacity int) ID
 	Send(id ID, message Message) error
 	CurrentIDs() []ID
+	MailboxSize(id ID) int
 	Stop(id ID)
 }
 
