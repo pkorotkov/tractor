@@ -15,10 +15,14 @@ type (
 	// being sent to/received by actors.
 	Message interface{}
 
-	// Context a handy wrapper for a incomming message
-	// along with the self-referencing ID.
+	// Context is a handy wrapper for a received message
+	// along with an ID of the actor processing the message.
 	Context interface {
+		// Self returns the ID of the actor that processes
+		// the current message.
 		Self() ID
+
+		// Message is an incomming message to be processed.
 		Message() Message
 	}
 
@@ -33,13 +37,14 @@ type (
 
 		// StopCallback is a funtion called right after
 		// stopping processing messages but before the
-		// final wiping it the actor. The actor's dedicated
-		// goroutine exists unless this function finishes.
+		// final wiping the actor out. Note that the actor's
+		// dedicated goroutine exists unless this function
+		// finishes.
 		StopCallback() func()
 	}
 
 	// Interceptor is a hijacking function to inspect
-	// all incomming messages useful if the user needs
+	// all incomming messages useful, if the user needs
 	// cross-actor message processing logic.
 	Interceptor func(Message)
 )
@@ -54,11 +59,12 @@ type System interface {
 	// If the actor is not found, it returns `ErrActorNotFound`.
 	Send(id ID, message Message) error
 
-	// CurrentIDs returns the IDs of currently running at the system.
+	// CurrentIDs returns the IDs of the actors currently
+	// running at the system.
 	CurrentIDs() []ID
 
 	// MailboxSize return the number of currently pending messages
-	// in the actor's mailbox (i.e. internal buffer).
+	// in the actor's mailbox (i.e. in its internal buffer).
 	MailboxSize(id ID) int
 
 	// Stop stops an actor with the given ID.
@@ -135,21 +141,23 @@ func (ctx context) Message() Message {
 	return ctx.message
 }
 
-// SystemOption represents an optional setting
-// passed to the system constructor.
+// SystemOption represents an optional setting,
+// passed to the system constructor, which alters
+// default behavior.
 type SystemOption func(*system)
 
-// WithMessageBufferCapacity configures the capacity of system's
-// buffer ingesting messages to be processed.
+// WithMessageBufferCapacity sets the capacity of system's
+// buffer that ingests all the incomming messages including
+// both user and service ones.
 func WithMessageBufferCapacity(capacity int) SystemOption {
 	return func(sys *system) {
 		sys.sendMessageLane = make(chan *sendMessage, capacity)
 	}
 }
 
-// WithInterceptor defines a function which intercepts all
-// the incomming messages and can be used to implement
-//non-trivial cross-actor message processing.
+// WithInterceptor sets a function that intercepts all
+// the incomming user messages and should be used for
+// non-trivial cross-actor message processing.
 func WithInterceptor(interceptor Interceptor) SystemOption {
 	return func(sys *system) {
 		sys.interceptor = interceptor
