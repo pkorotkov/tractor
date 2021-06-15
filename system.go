@@ -8,11 +8,11 @@ const defaultMessageLaneCapacity = 1000
 
 type (
 	// ID is a unique identifier associated with
-	// each running actor.
+	// each actor at the system.
 	ID uint64
 
 	// Message is an opaque type representing any message
-	// being sent/recevied by actors.
+	// being sent to/received by actors.
 	Message interface{}
 
 	// Context a handy wrapper for a incomming message
@@ -26,14 +26,14 @@ type (
 	// which can be actors.
 	Actor interface {
 		// Receive keeps the business logic of how
-		// actor handles messages. This method is
-		// supposed to be non-blocking and changing
-		// actors state synchronously.
+		// an actor handles messages. This method is
+		// supposed to be non-blocking and change
+		// the actor's state synchronously.
 		Receive(Context)
 
 		// StopCallback is a funtion called right after
-		// stopping processing messages but before final
-		// wiping it the actor. The actor's dedicated
+		// stopping processing messages but before the
+		// final wiping it the actor. The actor's dedicated
 		// goroutine exists unless this function finishes.
 		StopCallback() func()
 	}
@@ -54,7 +54,7 @@ type System interface {
 	// If the actor is not found, it returns `ErrActorNotFound`.
 	Send(id ID, message Message) error
 
-	// CurrentIDs returns the IDs currently running at the system.
+	// CurrentIDs returns the IDs of currently running at the system.
 	CurrentIDs() []ID
 
 	// MailboxSize return the number of currently pending messages
