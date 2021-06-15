@@ -4,7 +4,11 @@ import (
 	"sync"
 )
 
-const defaultMessageLaneCapacity = 1000
+// DefaultMessageBufferCapacity is the size of
+// buffer only for user messages set by default. It's a
+// wild guess value that should be redefined according
+// to specific use cases.
+const DefaultMessageBufferCapacity = 1000
 
 type (
 	// ID is a unique identifier associated with
@@ -22,7 +26,8 @@ type (
 		// the current message.
 		Self() ID
 
-		// Message is an incomming message to be processed.
+		// Message is an incomming message to be processed
+		// on an actor.
 		Message() Message
 	}
 
@@ -36,16 +41,16 @@ type (
 		Receive(Context)
 
 		// StopCallback is a funtion called right after
-		// stopping processing messages but before the
-		// final wiping the actor out. Note that the actor's
+		// stopping receiving messages but before
+		// wiping the actor out. Note that the actor's
 		// dedicated goroutine exists unless this function
 		// finishes.
 		StopCallback() func()
 	}
 
 	// Interceptor is a hijacking function to inspect
-	// all incomming messages useful, if the user needs
-	// cross-actor message processing logic.
+	// all the incomming messages. It's useful if the
+	// user needs cross-actor message processing logic.
 	Interceptor func(Message)
 )
 
@@ -240,7 +245,7 @@ func NewSystem(options ...SystemOption) System {
 		option(sys)
 	}
 	if sys.sendMessageLane == nil {
-		sys.sendMessageLane = make(chan *sendMessage, defaultMessageLaneCapacity)
+		sys.sendMessageLane = make(chan *sendMessage, DefaultMessageBufferCapacity)
 	}
 	go func() {
 		mailboxes := make(map[ID]mailbox)
