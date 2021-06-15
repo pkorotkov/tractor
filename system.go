@@ -152,8 +152,7 @@ func (ctx context) Message() Message {
 type SystemOption func(*system)
 
 // WithMessageBufferCapacity sets the capacity of system's
-// buffer that ingests all the incomming messages including
-// both user and service ones.
+// buffer that ingests all the user messages.
 func WithMessageBufferCapacity(capacity int) SystemOption {
 	return func(sys *system) {
 		sys.sendMessageLane = make(chan *sendMessage, capacity)
