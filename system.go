@@ -7,28 +7,61 @@ import (
 const defaultMessageLaneCapacity = 1000
 
 type (
+	// ID is a unique identifier associated with
+	// each running actor.
 	ID uint64
 
+	// Message is an opaque type representing any message
+	// being sent/recevied by actors.
 	Message interface{}
 
+	// Context a handy wrapper for a incomming message
+	// along with the self-referencing ID.
 	Context interface {
 		Self() ID
 		Message() Message
 	}
 
+	// Actor is a contract to implement for objects
+	// which can be actors.
 	Actor interface {
+		// Receive keeps the business logic of how
+		// actor handles messages. This method is
+		// supposed to be non-blocking and changing
+		// actors state synchronously.
 		Receive(Context)
+
+		// StopCallback is a funtion called right after
+		// stopping processing messages but before final
+		// wiping it the actor. The actor's dedicated
+		// goroutine exists unless this function finishes.
 		StopCallback() func()
 	}
 
+	// Interceptor is a hijacking function to inspect
+	// all incomming messages useful if the user needs
+	// cross-actor message processing logic.
 	Interceptor func(Message)
 )
 
+// System is an isolated runtime comprising actors and interceptors.
 type System interface {
+	// Spawn starts running the given actor with the mailbox capacity
+	// at the system.
 	Spawn(actor Actor, capacity int) ID
+
+	// Send sends the message to an actor with the given ID.
+	// If the actor is not found, it returns `ErrActorNotFound`.
 	Send(id ID, message Message) error
+
+	// CurrentIDs returns the IDs currently running at the system.
 	CurrentIDs() []ID
+
+	// MailboxSize return the number of currently pending messages
+	// in the actor's mailbox (i.e. internal buffer).
 	MailboxSize(id ID) int
+
+	// Stop stops an actor with the given ID.
 	Stop(id ID)
 }
 
@@ -102,14 +135,21 @@ func (ctx context) Message() Message {
 	return ctx.message
 }
 
+// SystemOption represents an optional setting
+// passed to the system constructor.
 type SystemOption func(*system)
 
+// WithMessageBufferCapacity configures the capacity of system's
+// buffer ingesting messages to be processed.
 func WithMessageBufferCapacity(capacity int) SystemOption {
 	return func(sys *system) {
 		sys.sendMessageLane = make(chan *sendMessage, capacity)
 	}
 }
 
+// WithInterceptor defines a function which intercepts all
+// the incomming messages and can be used to implement
+//non-trivial cross-actor message processing.
 func WithInterceptor(interceptor Interceptor) SystemOption {
 	return func(sys *system) {
 		sys.interceptor = interceptor
@@ -126,8 +166,6 @@ type system struct {
 	interceptor     Interceptor
 }
 
-// Spawn starts running the given actor with the mailbox capacity
-// at the system.
 func (sys *system) Spawn(actor Actor, capacity int) ID {
 	aa := addActorPool.Get().(*addActor)
 	mailbox := newMailbox(capacity)
@@ -146,8 +184,6 @@ func (sys *system) Spawn(actor Actor, capacity int) ID {
 	return id
 }
 
-// Send sends the message to an actor with the given ID.
-// If the actor is not found, it returns `ErrActorNotFound`.
 func (sys *system) Send(id ID, message Message) error {
 	m := sendMessagePool.Get().(*sendMessage)
 	m.id = id
@@ -158,7 +194,6 @@ func (sys *system) Send(id ID, message Message) error {
 	return err
 }
 
-// Stop stops an actor with the given ID.
 func (sys *system) Stop(id ID) {
 	m := removeActorPool.Get().(*removeActor)
 	m.id = id
@@ -167,7 +202,6 @@ func (sys *system) Stop(id ID) {
 	removeActorPool.Put(m)
 }
 
-// CurrentIDs returns the IDs currently running at the system.
 func (sys *system) CurrentIDs() []ID {
 	m := currentIDsPool.Get().(chan []ID)
 	sys.currentIDsLane <- m
@@ -176,8 +210,6 @@ func (sys *system) CurrentIDs() []ID {
 	return ids
 }
 
-// MailboxSize return the number of currently pending messages
-// in the actor's mailbox (i.e. internal buffer).
 func (sys *system) MailboxSize(id ID) int {
 	m := mailboxSizePool.Get().(*mailboxSize)
 	m.id = id
