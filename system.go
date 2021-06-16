@@ -4,37 +4,35 @@ import (
 	"sync"
 )
 
-// DefaultMessageBufferCapacity is the size of
-// buffer only for user messages set by default. It's a
-// wild guess value that should be redefined according
-// to specific use cases.
+// DefaultMessageBufferCapacity is the default size of the
+// buffer ingesting all user messages. It's a wild guess value
+// not intended to fit for any specific use case.
 const DefaultMessageBufferCapacity = 1000
 
 type (
 	// ID is a unique identifier associated with
-	// each actor at the system.
+	// each actor ever created at the system.
 	ID uint64
 
 	// Message is an opaque type representing any message
 	// being sent to/received by actors.
 	Message interface{}
 
-	// Context is a handy wrapper for a received message
-	// along with an ID of the actor processing the message.
+	// Context is a handy wrapper for the received message.
 	Context interface {
-		// Self returns the ID of the actor that processes
-		// the current message.
+		// Self returns the ID of the actor that
+		// processes the current message.
 		Self() ID
 
-		// Message is an incomming message to be processed
-		// on an actor.
+		// Message is an incomming message to be
+		// processed on the actor.
 		Message() Message
 	}
 
-	// Actor is a contract to implement for objects
-	// which can be actors.
+	// Actor is a contract to be implemented by
+	// objects to become actors.
 	Actor interface {
-		// Receive keeps the business logic of how
+		// Receive keeps business logic of how
 		// an actor handles messages. This method is
 		// supposed to be non-blocking and change
 		// the actor's state synchronously.
@@ -54,14 +52,14 @@ type (
 	Interceptor func(Message)
 )
 
-// System is an isolated runtime comprising actors and interceptors.
+// System is an isolated runtime comprising actors and interceptor(s).
 type System interface {
-	// Spawn starts running the given actor with the mailbox capacity
-	// at the system.
+	// Spawn starts running the given actor with the mailbox
+	// capacity at the system.
 	Spawn(actor Actor, capacity int) ID
 
 	// Send sends the message to an actor with the given ID.
-	// If the actor is not found, it returns `ErrActorNotFound`.
+	// If the actor is not found, it returns `ErrActorNotFound` error.
 	Send(id ID, message Message) error
 
 	// CurrentIDs returns the IDs of the actors currently
@@ -151,8 +149,8 @@ func (ctx context) Message() Message {
 // default behavior.
 type SystemOption func(*system)
 
-// WithMessageBufferCapacity sets the capacity of system's
-// buffer that ingests all the user messages.
+// WithMessageBufferCapacity sets the capacity of the
+// system's buffer that ingests all user messages.
 func WithMessageBufferCapacity(capacity int) SystemOption {
 	return func(sys *system) {
 		sys.sendMessageLane = make(chan *sendMessage, capacity)
