@@ -2,6 +2,7 @@ package tractor
 
 import (
 	"sync"
+	"sync/atomic"
 )
 
 // DefaultMessageBufferCapacity is the default size of the
@@ -9,10 +10,13 @@ import (
 // not intended to fit for any specific use case.
 const DefaultMessageBufferCapacity = 1000
 
+// MaxActors is the max number of actors a system can keep.
+const MaxActorsPerSystem = int64(100_000)
+
 type (
 	// ID is a unique identifier associated with
 	// each actor ever created at the system.
-	ID uint64
+	ID int64
 
 	// Message is an opaque type representing any message
 	// being sent to/received by actors.
@@ -100,6 +104,8 @@ type (
 )
 
 var (
+	systemID = 1 - MaxActorsPerSystem
+
 	addActorPool = sync.Pool{
 		New: func() interface{} {
 			return &addActor{id: make(chan ID)}
@@ -232,7 +238,7 @@ func (sys *system) MailboxSize(id ID) int {
 // NewSystem create a new system ready to spawn actors onto.
 func NewSystem(options ...SystemOption) System {
 	sys := &system{
-		nextID:          1,
+		nextID:          ID(atomic.AddInt64(&systemID, MaxActorsPerSystem)),
 		addActorLane:    make(chan *addActor),
 		removeActorLane: make(chan *removeActor),
 		currentIDsLane:  make(chan currentIDs),
