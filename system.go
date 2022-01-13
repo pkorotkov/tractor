@@ -54,21 +54,35 @@ type (
 	// all the incomming messages. It's useful if the
 	// user needs cross-actor message processing logic.
 	Interceptor func(Message)
+
+	// SystemOption represents optional settings,
+	// passed to the system constructor, which alters
+	// default behavior.
+	SystemOption func(*system)
+
+	// SpawnOption represents optional spawn settings.
+	SpawnOption func(*spawnOptions)
+
+	// ActorProfile combines actor's ID and name.
+	ActorProfile struct {
+		id   ID
+		name string
+	}
 )
 
 // System is an isolated runtime comprising actors and interceptor(s).
 type System interface {
 	// Spawn starts running the given actor with the mailbox
 	// capacity at the system.
-	Spawn(actor Actor, capacity int) ID
+	Spawn(actor Actor, capacity int, options ...SpawnOption) ID
 
 	// Send sends the message to an actor with the given ID.
 	// If the actor is not found, it returns `ErrActorNotFound` error.
 	Send(id ID, message Message) error
 
-	// CurrentIDs returns the IDs of the actors currently
+	// CurrentActors returns pairs of ID and name of the actors currently
 	// running at the system.
-	CurrentIDs() []ID
+	CurrentActors() []ActorProfile
 
 	// MailboxSize return the number of currently pending messages
 	// in the actor's mailbox (i.e. in its internal buffer).
@@ -78,10 +92,92 @@ type System interface {
 	Stop(id ID)
 }
 
+// WithMessageBufferCapacity sets the capacity of the
+// system's buffer that ingests all user messages.
+func WithMessageBufferCapacity(capacity int) SystemOption {
+	return func(sys *system) {
+		sys.sendMessageLane = make(chan *sendMessage, capacity)
+	}
+}
+
+// WithInterceptor sets a function that intercepts all
+// the incoming user messages and should be used for
+// non-trivial cross-actor message processing.
+func WithInterceptor(interceptor Interceptor) SystemOption {
+	return func(sys *system) {
+		sys.interceptor = interceptor
+	}
+}
+
+// WithName sets actor's human-readable name.
+func WithName(name string) SpawnOption {
+	return func(s *spawnOptions) {
+		s.actorName = name
+	}
+}
+
+// NewSystem create a new system ready to spawn actors onto.
+func NewSystem(options ...SystemOption) System {
+	sys := &system{
+		nextID:            ID(atomic.AddInt64(&systemID, MaxActorsPerSystem)),
+		addActorLane:      make(chan *addActor),
+		removeActorLane:   make(chan *removeActor),
+		currentActorsLane: make(chan currentActors),
+		mailboxSizeLane:   make(chan *mailboxSize),
+	}
+	for _, option := range options {
+		option(sys)
+	}
+	if sys.sendMessageLane == nil {
+		sys.sendMessageLane = make(chan *sendMessage, DefaultMessageBufferCapacity)
+	}
+	go func() {
+		actors := make(map[ID]actor)
+		for {
+			select {
+			case aa := <-sys.addActorLane:
+				id := sys.nextID
+				actors[id] = actor{mailbox: aa.mailbox, name: aa.name}
+				sys.nextID += 1
+				aa.id <- id
+			case ra := <-sys.removeActorLane:
+				if actor, ok := actors[ra.id]; ok {
+					close(actor.mailbox)
+					delete(actors, ra.id)
+				}
+				ra.done <- struct{}{}
+			case sm := <-sys.sendMessageLane:
+				if actor, ok := actors[sm.id]; ok {
+					if sys.interceptor != nil {
+						sys.interceptor(sm.message)
+					}
+					sm.error <- actor.mailbox.Put(sm.message)
+				} else {
+					sm.error <- ErrActorNotFound
+				}
+			case cas := <-sys.currentActorsLane:
+				as := make([]ActorProfile, 0, len(actors))
+				for id, a := range actors {
+					as = append(as, ActorProfile{id: id, name: a.name})
+				}
+				cas <- as
+			case mbs := <-sys.mailboxSizeLane:
+				var size int
+				if actor, ok := actors[mbs.id]; ok {
+					size = len(actor.mailbox)
+				}
+				mbs.size <- size
+			}
+		}
+	}()
+	return sys
+}
+
 type (
 	addActor struct {
 		mailbox mailbox
 		id      chan ID
+		name    string
 	}
 
 	removeActor struct {
@@ -95,11 +191,16 @@ type (
 		error   chan error
 	}
 
-	currentIDs chan []ID
+	currentActors chan []ActorProfile
 
 	mailboxSize struct {
 		id   ID
 		size chan int
+	}
+
+	actor struct {
+		mailbox mailbox
+		name    string
 	}
 )
 
@@ -124,9 +225,9 @@ var (
 		},
 	}
 
-	currentIDsPool = sync.Pool{
+	currentActorsPool = sync.Pool{
 		New: func() interface{} {
-			return make(chan []ID)
+			return make(chan []ActorProfile)
 		},
 	}
 
@@ -150,42 +251,29 @@ func (ctx context) Message() Message {
 	return ctx.message
 }
 
-// SystemOption represents an optional setting,
-// passed to the system constructor, which alters
-// default behavior.
-type SystemOption func(*system)
-
-// WithMessageBufferCapacity sets the capacity of the
-// system's buffer that ingests all user messages.
-func WithMessageBufferCapacity(capacity int) SystemOption {
-	return func(sys *system) {
-		sys.sendMessageLane = make(chan *sendMessage, capacity)
-	}
-}
-
-// WithInterceptor sets a function that intercepts all
-// the incomming user messages and should be used for
-// non-trivial cross-actor message processing.
-func WithInterceptor(interceptor Interceptor) SystemOption {
-	return func(sys *system) {
-		sys.interceptor = interceptor
-	}
+type spawnOptions struct {
+	actorName string
 }
 
 type system struct {
-	nextID          ID
-	addActorLane    chan *addActor
-	removeActorLane chan *removeActor
-	sendMessageLane chan *sendMessage
-	currentIDsLane  chan currentIDs
-	mailboxSizeLane chan *mailboxSize
-	interceptor     Interceptor
+	nextID            ID
+	addActorLane      chan *addActor
+	removeActorLane   chan *removeActor
+	sendMessageLane   chan *sendMessage
+	currentActorsLane chan currentActors
+	mailboxSizeLane   chan *mailboxSize
+	interceptor       Interceptor
 }
 
-func (sys *system) Spawn(actor Actor, capacity int) ID {
+func (sys *system) Spawn(actor Actor, capacity int, options ...SpawnOption) ID {
+	var sos spawnOptions
+	for _, option := range options {
+		option(&sos)
+	}
 	aa := addActorPool.Get().(*addActor)
 	mailbox := newMailbox(capacity)
 	aa.mailbox = mailbox
+	aa.name = sos.actorName
 	sys.addActorLane <- aa
 	id := <-aa.id
 	addActorPool.Put(aa)
@@ -218,12 +306,12 @@ func (sys *system) Stop(id ID) {
 	removeActorPool.Put(m)
 }
 
-func (sys *system) CurrentIDs() []ID {
-	m := currentIDsPool.Get().(chan []ID)
-	sys.currentIDsLane <- m
-	ids := <-m
-	currentIDsPool.Put(m)
-	return ids
+func (sys *system) CurrentActors() []ActorProfile {
+	m := currentActorsPool.Get().(chan []ActorProfile)
+	sys.currentActorsLane <- m
+	as := <-m
+	currentActorsPool.Put(m)
+	return as
 }
 
 func (sys *system) MailboxSize(id ID) int {
@@ -233,61 +321,4 @@ func (sys *system) MailboxSize(id ID) int {
 	size := <-m.size
 	mailboxSizePool.Put(m)
 	return size
-}
-
-// NewSystem create a new system ready to spawn actors onto.
-func NewSystem(options ...SystemOption) System {
-	sys := &system{
-		nextID:          ID(atomic.AddInt64(&systemID, MaxActorsPerSystem)),
-		addActorLane:    make(chan *addActor),
-		removeActorLane: make(chan *removeActor),
-		currentIDsLane:  make(chan currentIDs),
-		mailboxSizeLane: make(chan *mailboxSize),
-	}
-	for _, option := range options {
-		option(sys)
-	}
-	if sys.sendMessageLane == nil {
-		sys.sendMessageLane = make(chan *sendMessage, DefaultMessageBufferCapacity)
-	}
-	go func() {
-		mailboxes := make(map[ID]mailbox)
-		for {
-			select {
-			case aa := <-sys.addActorLane:
-				id := sys.nextID
-				mailboxes[id] = aa.mailbox
-				sys.nextID += 1
-				aa.id <- id
-			case ra := <-sys.removeActorLane:
-				if mb, ok := mailboxes[ra.id]; ok {
-					delete(mailboxes, ra.id)
-					close(mb)
-				}
-				ra.done <- struct{}{}
-			case sm := <-sys.sendMessageLane:
-				if mb, ok := mailboxes[sm.id]; ok {
-					if sys.interceptor != nil {
-						sys.interceptor(sm.message)
-					}
-					sm.error <- mb.Put(sm.message)
-				} else {
-					sm.error <- ErrActorNotFound
-				}
-			case cids := <-sys.currentIDsLane:
-				ids := make([]ID, 0, len(mailboxes))
-				for id := range mailboxes {
-					ids = append(ids, id)
-				}
-				cids <- ids
-			case mbs := <-sys.mailboxSizeLane:
-				var size int
-				if mb, ok := mailboxes[mbs.id]; ok {
-					size = len(mb)
-				}
-				mbs.size <- size
-			}
-		}
-	}()
-	return sys
 }
