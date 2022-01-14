@@ -24,7 +24,7 @@ type (
 
 	// Context is a handy wrapper for the received message.
 	Context interface {
-		// Self returns the ID of the actor that
+		// SelfID returns the ID of the actor that
 		// processes the current message.
 		SelfID() ID
 
