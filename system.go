@@ -26,7 +26,7 @@ type (
 	Context interface {
 		// Self returns the ID of the actor that
 		// processes the current message.
-		Self() ID
+		SelfID() ID
 
 		// Message is an incomming message to be
 		// processed on the actor.
@@ -85,7 +85,8 @@ type System interface {
 	CurrentActors() []ActorProfile
 
 	// MailboxSize return the number of currently pending messages
-	// in the actor's mailbox (i.e. in its internal buffer).
+	// in the actor's mailbox (i.e. in its internal buffer). If an
+	// actor with the given ID is not found, it returns a negative value.
 	MailboxSize(id ID) int
 
 	// Stop stops an actor with the given ID.
@@ -162,7 +163,7 @@ func NewSystem(options ...SystemOption) System {
 				}
 				cas <- as
 			case mbs := <-sys.mailboxSizeLane:
-				var size int
+				var size = -1
 				if actor, ok := actors[mbs.id]; ok {
 					size = len(actor.mailbox)
 				}
@@ -243,7 +244,7 @@ type context struct {
 	message Message
 }
 
-func (ctx context) Self() ID {
+func (ctx context) SelfID() ID {
 	return ctx.id
 }
 
