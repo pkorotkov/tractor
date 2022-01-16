@@ -60,30 +60,21 @@ type (
 	// passed to the system constructor, which alters
 	// default behavior.
 	SystemOption func(*system)
-
-	// SpawnOption represents optional spawn settings.
-	SpawnOption func(*spawnOptions)
-
-	// ActorProfile combines actor's ID and name.
-	ActorProfile struct {
-		ID   ID
-		Name string
-	}
 )
 
 // System is an isolated runtime comprising actors and interceptor(s).
 type System interface {
 	// Spawn starts running the given actor with the mailbox
 	// capacity at the system.
-	Spawn(actor Actor, capacity int, options ...SpawnOption) ID
+	Spawn(actor Actor, capacity int) ID
 
 	// Send sends the message to an actor with the given ID.
 	// If the actor is not found, it returns `ErrActorNotFound` error.
 	Send(id ID, message Message) error
 
-	// CurrentActors returns pairs of ID and name of the actors currently
-	// running at the system.
-	CurrentActors() []ActorProfile
+	// CurrentActors returns IDs of the actors currently running
+	// at the system.
+	CurrentActors() []ID
 
 	// MailboxSize return the number of currently pending messages
 	// in the actor's mailbox (i.e. in its internal buffer). If an
@@ -111,13 +102,6 @@ func WithInterceptor(interceptor Interceptor) SystemOption {
 	}
 }
 
-// WithName sets actor's human-readable name.
-func WithName(name string) SpawnOption {
-	return func(s *spawnOptions) {
-		s.actorName = name
-	}
-}
-
 // NewSystem create a new system ready to spawn actors onto.
 func NewSystem(options ...SystemOption) System {
 	sys := &system{
@@ -134,39 +118,39 @@ func NewSystem(options ...SystemOption) System {
 		sys.sendMessageLane = make(chan *sendMessage, DefaultMessageBufferCapacity)
 	}
 	go func() {
-		actors := make(map[ID]actor)
+		mailboxes := make(map[ID]mailbox)
 		for {
 			select {
 			case aa := <-sys.addActorLane:
 				id := sys.nextID
-				actors[id] = actor{mailbox: aa.mailbox, name: aa.name}
+				mailboxes[id] = aa.mailbox
 				sys.nextID += 1
 				aa.id <- id
 			case ra := <-sys.removeActorLane:
-				if actor, ok := actors[ra.id]; ok {
-					close(actor.mailbox)
-					delete(actors, ra.id)
+				if mailbox, ok := mailboxes[ra.id]; ok {
+					close(mailbox)
+					delete(mailboxes, ra.id)
 				}
 				ra.done <- struct{}{}
 			case sm := <-sys.sendMessageLane:
-				if actor, ok := actors[sm.id]; ok {
+				if mailbox, ok := mailboxes[sm.id]; ok {
 					if sys.interceptor != nil {
 						sys.interceptor(sm.id, sm.message)
 					}
-					sm.error <- actor.mailbox.Put(sm.message)
+					sm.error <- mailbox.Put(sm.message)
 				} else {
 					sm.error <- ErrActorNotFound
 				}
-			case cas := <-sys.currentActorsLane:
-				as := make([]ActorProfile, 0, len(actors))
-				for id, a := range actors {
-					as = append(as, ActorProfile{ID: id, Name: a.name})
+			case cids := <-sys.currentActorsLane:
+				ids := make([]ID, 0, len(mailboxes))
+				for id := range mailboxes {
+					ids = append(ids, id)
 				}
-				cas <- as
+				cids <- ids
 			case mbs := <-sys.mailboxSizeLane:
 				var size = -1
-				if actor, ok := actors[mbs.id]; ok {
-					size = len(actor.mailbox)
+				if mailbox, ok := mailboxes[mbs.id]; ok {
+					size = len(mailbox)
 				}
 				mbs.size <- size
 			}
@@ -179,7 +163,6 @@ type (
 	addActor struct {
 		mailbox mailbox
 		id      chan ID
-		name    string
 	}
 
 	removeActor struct {
@@ -193,16 +176,11 @@ type (
 		error   chan error
 	}
 
-	currentActors chan []ActorProfile
+	currentActors chan []ID
 
 	mailboxSize struct {
 		id   ID
 		size chan int
-	}
-
-	actor struct {
-		mailbox mailbox
-		name    string
 	}
 )
 
@@ -229,7 +207,7 @@ var (
 
 	currentActorsPool = sync.Pool{
 		New: func() interface{} {
-			return make(chan []ActorProfile)
+			return make(chan []ID)
 		},
 	}
 
@@ -253,10 +231,6 @@ func (ctx context) Message() Message {
 	return ctx.message
 }
 
-type spawnOptions struct {
-	actorName string
-}
-
 type system struct {
 	nextID            ID
 	addActorLane      chan *addActor
@@ -267,15 +241,10 @@ type system struct {
 	interceptor       Interceptor
 }
 
-func (sys *system) Spawn(actor Actor, capacity int, options ...SpawnOption) ID {
-	var sos spawnOptions
-	for _, option := range options {
-		option(&sos)
-	}
+func (sys *system) Spawn(actor Actor, capacity int) ID {
 	aa := addActorPool.Get().(*addActor)
 	mailbox := newMailbox(capacity)
 	aa.mailbox = mailbox
-	aa.name = sos.actorName
 	sys.addActorLane <- aa
 	id := <-aa.id
 	addActorPool.Put(aa)
@@ -308,8 +277,8 @@ func (sys *system) Stop(id ID) {
 	removeActorPool.Put(m)
 }
 
-func (sys *system) CurrentActors() []ActorProfile {
-	m := currentActorsPool.Get().(chan []ActorProfile)
+func (sys *system) CurrentActors() []ID {
+	m := currentActorsPool.Get().(chan []ID)
 	sys.currentActorsLane <- m
 	as := <-m
 	currentActorsPool.Put(m)
