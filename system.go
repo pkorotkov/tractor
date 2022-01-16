@@ -51,8 +51,9 @@ type (
 	}
 
 	// Interceptor is a hijacking function to inspect
-	// all the incomming messages. It's useful if the
-	// user needs cross-actor message processing logic.
+	// all the incomming messages and ids of their senders.
+	// It's useful if the user needs cross-actor message
+	// processing logic.
 	Interceptor func(ID, Message)
 
 	// SystemOption represents optional settings,
@@ -65,8 +66,8 @@ type (
 
 	// ActorProfile combines actor's ID and name.
 	ActorProfile struct {
-		id   ID
-		name string
+		ID   ID
+		Name string
 	}
 )
 
@@ -159,7 +160,7 @@ func NewSystem(options ...SystemOption) System {
 			case cas := <-sys.currentActorsLane:
 				as := make([]ActorProfile, 0, len(actors))
 				for id, a := range actors {
-					as = append(as, ActorProfile{id: id, name: a.name})
+					as = append(as, ActorProfile{ID: id, Name: a.name})
 				}
 				cas <- as
 			case mbs := <-sys.mailboxSizeLane:
