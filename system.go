@@ -53,7 +53,7 @@ type (
 	// Interceptor is a hijacking function to inspect
 	// all the incomming messages. It's useful if the
 	// user needs cross-actor message processing logic.
-	Interceptor func(Message)
+	Interceptor func(ID, Message)
 
 	// SystemOption represents optional settings,
 	// passed to the system constructor, which alters
@@ -150,7 +150,7 @@ func NewSystem(options ...SystemOption) System {
 			case sm := <-sys.sendMessageLane:
 				if actor, ok := actors[sm.id]; ok {
 					if sys.interceptor != nil {
-						sys.interceptor(sm.message)
+						sys.interceptor(sm.id, sm.message)
 					}
 					sm.error <- actor.mailbox.Put(sm.message)
 				} else {
