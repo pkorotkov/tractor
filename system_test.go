@@ -30,3 +30,23 @@ func TestSystem(t *testing.T) {
 		c.Assert(gotIDs, qt.DeepEquals, expectedIDs)
 	})
 }
+
+func TestCurrentActors(t *testing.T) {
+	t.Run("current-actors", func(t *testing.T) {
+		c := qt.New(t)
+		s := NewSystem()
+		s.Spawn(&testActor{}, 1)
+		s.Spawn(&testActor{}, 1)
+		s.Spawn(&testActor{}, 1)
+		cas := s.CurrentActors()
+		c.Assert(cas, qt.DeepEquals, []ID{1, 2, 3})
+	})
+}
+
+type testActor struct{}
+
+func (ta *testActor) Receive(_ Context) {}
+
+func (ta *testActor) StopCallback() func() {
+	return nil
+}
