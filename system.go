@@ -108,7 +108,7 @@ func NewSystem(options ...SystemOption) System {
 		nextID:            ID(atomic.AddInt64(&systemID, MaxActorsPerSystem)),
 		addActorLane:      make(chan *addActor),
 		removeActorLane:   make(chan *removeActor),
-		currentActorsLane: make(chan currentActors),
+		currentActorsLane: make(chan *currentActors),
 		mailboxSizeLane:   make(chan *mailboxSize),
 	}
 	for _, option := range options {
@@ -146,7 +146,7 @@ func NewSystem(options ...SystemOption) System {
 				for id := range mailboxes {
 					ids = append(ids, id)
 				}
-				cids <- ids
+				*cids <- ids
 			case mbs := <-sys.mailboxSizeLane:
 				var size = -1
 				if mailbox, ok := mailboxes[mbs.id]; ok {
@@ -207,7 +207,8 @@ var (
 
 	currentActorsPool = sync.Pool{
 		New: func() interface{} {
-			return make(chan []ID)
+			c := currentActors(make(chan []ID))
+			return &c
 		},
 	}
 
@@ -236,7 +237,7 @@ type system struct {
 	addActorLane      chan *addActor
 	removeActorLane   chan *removeActor
 	sendMessageLane   chan *sendMessage
-	currentActorsLane chan currentActors
+	currentActorsLane chan *currentActors
 	mailboxSizeLane   chan *mailboxSize
 	interceptor       Interceptor
 }
@@ -280,9 +281,9 @@ func (sys *system) Stop(id ID) {
 }
 
 func (sys *system) CurrentActors() []ID {
-	m := currentActorsPool.Get().(chan []ID)
+	m := currentActorsPool.Get().(*currentActors)
 	sys.currentActorsLane <- m
-	as := <-m
+	as := <-(*m)
 	currentActorsPool.Put(m)
 	return as
 }
