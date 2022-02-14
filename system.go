@@ -247,6 +247,7 @@ func (sys *system) Spawn(actor Actor, capacity int) ID {
 	aa.mailbox = mailbox
 	sys.addActorLane <- aa
 	id := <-aa.id
+	aa.mailbox = nil
 	addActorPool.Put(aa)
 	go func() {
 		for message := range mailbox.C() {
@@ -265,6 +266,7 @@ func (sys *system) Send(id ID, message Message) error {
 	m.message = message
 	sys.sendMessageLane <- m
 	err := <-m.error
+	m.message = nil
 	sendMessagePool.Put(m)
 	return err
 }
