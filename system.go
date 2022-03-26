@@ -13,7 +13,7 @@ const DefaultMessageBufferCapacity = 1000
 // MaxActors is the max number of actors a system can keep.
 const MaxActorsPerSystem = int64(100_000)
 
-// InvalidID indicates an invalid actor ID.
+// InvalidID represents the invalid actor ID.
 const InvalidID = ID(0)
 
 type (
