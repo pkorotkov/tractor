@@ -10,7 +10,7 @@ import (
 // not intended to fit for any specific use case.
 const DefaultMessageBufferCapacity = 1000
 
-// MaxActors is the max number of actors a system can keep.
+// MaxActorsPerSystem is the max number of actors a system can keep.
 const MaxActorsPerSystem = int64(100_000)
 
 // InvalidID represents the invalid actor ID.
@@ -23,7 +23,7 @@ type (
 
 	// Message is an opaque type representing any message
 	// being sent to/received by actors.
-	Message interface{}
+	Message any
 
 	// Context is a handy wrapper for the received message.
 	Context interface {
@@ -105,10 +105,14 @@ func WithInterceptor(interceptor Interceptor) SystemOption {
 	}
 }
 
-// NewSystem create a new system ready to spawn actors onto.
+// NewSystem creates a new system ready to spawn actors onto.
 func NewSystem(options ...SystemOption) System {
+	nextID := atomic.AddInt64(&systemID, MaxActorsPerSystem)
+	startID, endID := nextID, nextID+MaxActorsPerSystem-1
 	sys := &system{
-		nextID:            ID(atomic.AddInt64(&systemID, MaxActorsPerSystem)),
+		startID:           startID,
+		endID:             endID,
+		nextID:            ID(nextID),
 		addActorLane:      make(chan *addActor),
 		removeActorLane:   make(chan *removeActor),
 		currentActorsLane: make(chan *currentActors),
@@ -191,32 +195,32 @@ var (
 	systemID = 1 - MaxActorsPerSystem
 
 	addActorPool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &addActor{id: make(chan ID)}
 		},
 	}
 
 	removeActorPool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &removeActor{done: make(chan struct{})}
 		},
 	}
 
 	sendMessagePool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &sendMessage{error: make(chan error)}
 		},
 	}
 
 	currentActorsPool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			c := currentActors(make(chan []ID))
 			return &c
 		},
 	}
 
 	mailboxSizePool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &mailboxSize{size: make(chan int)}
 		},
 	}
@@ -236,6 +240,8 @@ func (ctx context) Message() Message {
 }
 
 type system struct {
+	startID           int64
+	endID             int64
 	nextID            ID
 	addActorLane      chan *addActor
 	removeActorLane   chan *removeActor
@@ -265,6 +271,9 @@ func (sys *system) Spawn(actor Actor, capacity int) ID {
 }
 
 func (sys *system) Send(id ID, message Message) error {
+	if int64(id) < sys.startID || int64(id) > sys.endID {
+		return ErrWrongSystem
+	}
 	m := sendMessagePool.Get().(*sendMessage)
 	m.id = id
 	m.message = message
