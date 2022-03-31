@@ -11,19 +11,21 @@ func TestSystem(t *testing.T) {
 	t.Run("concurrent-system-creation", func(t *testing.T) {
 		c := qt.New(t)
 		ids := make(chan ID)
-		gotIDs := make([]ID, 0, 3)
+		const n = 4
+		gotIDs := make([]ID, 0, n)
 		expectedIDs := []ID{
 			1,
 			1 + ID(1*MaxActorsPerSystem),
 			1 + ID(2*MaxActorsPerSystem),
+			1 + ID(3*MaxActorsPerSystem),
 		}
-		for i := 0; i < 3; i++ {
+		for i := 0; i < n; i++ {
 			go func() {
 				s := NewSystem()
 				ids <- s.(*system).nextID
 			}()
 		}
-		for i := 0; i < 3; i++ {
+		for i := 0; i < n; i++ {
 			gotIDs = append(gotIDs, <-ids)
 		}
 		sort.Slice(gotIDs, func(i, j int) bool { return gotIDs[i] < gotIDs[j] })
@@ -49,4 +51,16 @@ func (ta *testActor) Receive(_ Context) {}
 
 func (ta *testActor) StopCallback() func() {
 	return nil
+}
+
+func TestCrossSystemSends(t *testing.T) {
+	t.Run("cross-system-sends", func(t *testing.T) {
+		c := qt.New(t)
+		s := NewSystem()
+		_ = s.Spawn(&testActor{}, 1)
+		err := s.Send(ID(MaxActorsPerSystem), nil)
+		c.Assert(err, qt.ErrorIs, ErrActorNotFound)
+		err = s.Send(ID(MaxActorsPerSystem+1), nil)
+		c.Assert(err, qt.ErrorIs, ErrWrongSystem)
+	})
 }
