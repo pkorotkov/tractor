@@ -3,6 +3,7 @@ package tractor
 import (
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // DefaultMessageBufferCapacity is the default size of the
@@ -69,7 +70,7 @@ type (
 type System interface {
 	// Spawn starts running the given actor with the mailbox
 	// capacity at the system.
-	Spawn(actor Actor, capacity int) ID
+	Spawn(actor Actor, capacity int, options ...SpawnOption) ID
 
 	// Send sends the message to an actor with the given ID.
 	// If the actor is not found, it returns `ErrActorNotFound` error.
@@ -239,6 +240,22 @@ func (ctx context) Message() Message {
 	return ctx.message
 }
 
+type (
+	spawnOptions struct {
+		heartbeatInterval time.Duration
+	}
+
+	SpawnOption func(*spawnOptions)
+)
+
+// WithHeartbeatInterval adds periodic sending heartbeat
+// messages to an actor to be created with the given time interval.
+func WithHeartbeatInterval(interval time.Duration) SpawnOption {
+	return func(so *spawnOptions) {
+		so.heartbeatInterval = interval
+	}
+}
+
 type system struct {
 	startID           int64
 	endID             int64
@@ -251,7 +268,7 @@ type system struct {
 	interceptor       Interceptor
 }
 
-func (sys *system) Spawn(actor Actor, capacity int) ID {
+func (sys *system) Spawn(actor Actor, capacity int, options ...SpawnOption) ID {
 	aa := addActorPool.Get().(*addActor)
 	mailbox := newMailbox(capacity)
 	aa.mailbox = mailbox
@@ -259,9 +276,33 @@ func (sys *system) Spawn(actor Actor, capacity int) ID {
 	id := <-aa.id
 	aa.mailbox = nil
 	addActorPool.Put(aa)
+	opts := &spawnOptions{}
+	for _, f := range options {
+		f(opts)
+	}
+	var stopHeartbeat chan struct{}
+	if d := opts.heartbeatInterval; d != 0 {
+		stopHeartbeat = make(chan struct{})
+		go func() {
+			timer := time.NewTimer(d)
+			for {
+				select {
+				case <-stopHeartbeat:
+					_ = timer.Stop()
+					return
+				case <-timer.C:
+					sys.Send(id, Heartbeat{})
+					timer.Reset(d)
+				}
+			}
+		}()
+	}
 	go func() {
 		for message := range mailbox.C() {
 			actor.Receive(context{id, message})
+		}
+		if stopHeartbeat != nil {
+			close(stopHeartbeat)
 		}
 		if scb := actor.StopCallback(); scb != nil {
 			scb()
