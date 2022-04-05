@@ -63,7 +63,7 @@ type (
 	// SystemOption represents optional settings,
 	// passed to the system constructor, which alters
 	// default behavior.
-	SystemOption func(*system)
+	NewSystemOption func(*system)
 )
 
 // System is an isolated runtime comprising actors and interceptor(s).
@@ -91,7 +91,7 @@ type System interface {
 
 // WithMessageBufferCapacity sets the capacity of the
 // system's buffer that ingests all user messages.
-func WithMessageBufferCapacity(capacity int) SystemOption {
+func WithMessageBufferCapacity(capacity int) NewSystemOption {
 	return func(sys *system) {
 		sys.sendMessageLane = make(chan *sendMessage, capacity)
 	}
@@ -100,14 +100,14 @@ func WithMessageBufferCapacity(capacity int) SystemOption {
 // WithInterceptor sets a function that intercepts all
 // the incoming user messages and should be used for
 // non-trivial cross-actor message processing.
-func WithInterceptor(interceptor Interceptor) SystemOption {
+func WithInterceptor(interceptor Interceptor) NewSystemOption {
 	return func(sys *system) {
 		sys.interceptor = interceptor
 	}
 }
 
 // NewSystem creates a new system ready to spawn actors onto.
-func NewSystem(options ...SystemOption) System {
+func NewSystem(options ...NewSystemOption) System {
 	nextID := atomic.AddInt64(&systemID, MaxActorsPerSystem)
 	startID, endID := nextID, nextID+MaxActorsPerSystem-1
 	sys := &system{
