@@ -312,8 +312,8 @@ func (sys *system) Spawn(actor Actor, capacity int, options ...SpawnOption) ID {
 }
 
 func (sys *system) Send(id ID, message Message) error {
-	if int64(id) < sys.startID || int64(id) > sys.endID {
-		return ErrWrongSystem
+	if isIDOutOfRange(int64(id), sys.startID, sys.endID) {
+		panic("incorrect id for current system")
 	}
 	m := sendMessagePool.Get().(*sendMessage)
 	m.id = id
@@ -326,6 +326,9 @@ func (sys *system) Send(id ID, message Message) error {
 }
 
 func (sys *system) Stop(id ID) {
+	if isIDOutOfRange(int64(id), sys.startID, sys.endID) {
+		panic("incorrect id for current system")
+	}
 	m := removeActorPool.Get().(*removeActor)
 	m.id = id
 	sys.removeActorLane <- m
@@ -348,4 +351,11 @@ func (sys *system) MailboxSize(id ID) int {
 	size := <-m.size
 	mailboxSizePool.Put(m)
 	return size
+}
+
+func isIDOutOfRange(currentID, startID, endID int64) bool {
+	if currentID < startID || currentID > endID {
+		return true
+	}
+	return false
 }

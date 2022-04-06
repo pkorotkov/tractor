@@ -53,14 +53,12 @@ func (ta *testActor) StopCallback() func() {
 	return nil
 }
 
-func TestCrossSystemSends(t *testing.T) {
-	t.Run("cross-system-sends", func(t *testing.T) {
+func TestActorNotFound(t *testing.T) {
+	t.Run("actor-not-found", func(t *testing.T) {
 		c := qt.New(t)
 		s := NewSystem()
 		_ = s.Spawn(&testActor{}, 1)
 		err := s.Send(ID(MaxActorsPerSystem), nil)
 		c.Assert(err, qt.ErrorIs, ErrActorNotFound)
-		err = s.Send(ID(MaxActorsPerSystem+1), nil)
-		c.Assert(err, qt.ErrorIs, ErrWrongSystem)
 	})
 }
