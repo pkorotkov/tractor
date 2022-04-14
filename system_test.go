@@ -41,6 +41,7 @@ func TestCurrentActors(t *testing.T) {
 		s.Spawn(&testActor{}, 1)
 		s.Spawn(&testActor{}, 1)
 		cas := s.CurrentActors()
+		sort.Slice(cas, func(i, j int) bool { return cas[i] < cas[j] })
 		c.Assert(cas, qt.DeepEquals, []ID{1, 2, 3})
 	})
 }
