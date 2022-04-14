@@ -345,6 +345,9 @@ func (sys *system) CurrentActors() []ID {
 }
 
 func (sys *system) MailboxSize(id ID) int {
+	if isIDOutOfRange(int64(id), sys.startID, sys.endID) {
+		panic("incorrect id for current system")
+	}
 	m := mailboxSizePool.Get().(*mailboxSize)
 	m.id = id
 	sys.mailboxSizeLane <- m
