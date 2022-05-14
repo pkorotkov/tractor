@@ -142,10 +142,11 @@ func NewSystem(options ...NewSystemOption) System {
 				ra.done <- struct{}{}
 			case sm := <-sys.sendMessageLane:
 				if mailbox, ok := mailboxes[sm.id]; ok {
+					m := sm.message
 					if sys.interceptor != nil {
-						sys.interceptor(sm.id, sm.message)
+						sys.interceptor(sm.id, m)
 					}
-					sm.error <- mailbox.Put(sm.message)
+					sm.error <- mailbox.Put(m)
 				} else {
 					sm.error <- ErrActorNotFound
 				}
