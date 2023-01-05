@@ -246,6 +246,7 @@ type (
 		heartbeatInterval time.Duration
 	}
 
+	// SpawnOption represents an option when spawning an actor at the system.
 	SpawnOption func(*spawnOptions)
 )
 
