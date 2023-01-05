@@ -51,7 +51,7 @@ type (
 		// wiping the actor out. Note that the actor's
 		// dedicated goroutine exists unless this function
 		// finishes.
-		StopCallback() func()
+		StopCallback()
 	}
 
 	// Interceptor is a hijacking function to inspect
@@ -308,9 +308,7 @@ func (sys *system) Spawn(actor Actor, capacity int, options ...SpawnOption) ID {
 		if stopHeartbeat != nil {
 			close(stopHeartbeat)
 		}
-		if scb := actor.StopCallback(); scb != nil {
-			scb()
-		}
+		actor.StopCallback()
 	}()
 	return id
 }
