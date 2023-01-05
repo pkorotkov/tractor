@@ -290,7 +290,9 @@ func (sys *system) Spawn(actor Actor, capacity int, options ...SpawnOption) ID {
 			for {
 				select {
 				case <-stopHeartbeat:
-					_ = timer.Stop()
+					if !timer.Stop() {
+						<-timer.C
+					}
 					return
 				case <-timer.C:
 					sys.Send(id, Heartbeat{})
