@@ -50,9 +50,7 @@ type testActor struct{}
 
 func (ta *testActor) Receive(_ Context) {}
 
-func (ta *testActor) StopCallback() func() {
-	return nil
-}
+func (ta *testActor) StopCallback() {}
 
 func TestActorNotFound(t *testing.T) {
 	t.Run("actor-not-found", func(t *testing.T) {
