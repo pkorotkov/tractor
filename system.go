@@ -19,7 +19,7 @@ const InvalidID = ID(0)
 
 type (
 	// ID is a unique identifier associated with
-	// each actor ever spawned within the system.
+	// each actor ever spawned onto the system.
 	ID int64
 
 	// Message is an opaque type representing any message
@@ -246,7 +246,7 @@ type (
 		heartbeatInterval time.Duration
 	}
 
-	// SpawnOption represents an option when spawning an actor within the system.
+	// SpawnOption represents an option when spawning an actor onto the system.
 	SpawnOption func(*spawnOptions)
 )
 

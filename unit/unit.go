@@ -23,7 +23,7 @@ type Unit struct {
 	stopped *atomic.Bool
 }
 
-// New creates a new unit (spawning an actor within the system given) in similar ways we create an actor.
+// New creates a new unit (spawning an actor onto the system given) in similar ways we create an actor.
 func New(system tractor.System, actor ExtendedActor, capacity int, options ...tractor.SpawnOption) *Unit {
 	var stopped atomic.Bool
 	unit := &Unit{system: system, stopped: &stopped}
