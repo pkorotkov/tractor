@@ -48,7 +48,7 @@ func (unit *Unit) Stopped() bool {
 	return unit.stopped.Load()
 }
 
-// MailboxSize returns mailbox size of the underlying actor.
+// MailboxSize returns the mailbox size of the underlying actor.
 func (unit *Unit) MailboxSize() int {
 	return unit.system.MailboxSize(unit.actorID)
 }
