@@ -19,7 +19,7 @@ const InvalidID = ID(0)
 
 type (
 	// ID is a unique identifier associated with
-	// each actor ever created at the system.
+	// each actor ever spawned within the system.
 	ID int64
 
 	// Message is an opaque type representing any message
@@ -69,7 +69,7 @@ type (
 // System is an isolated runtime comprising actors and interceptor(s).
 type System interface {
 	// Spawn starts running the given actor with the mailbox
-	// capacity at the system.
+	// capacity in the system.
 	Spawn(actor Actor, capacity int, options ...SpawnOption) ID
 
 	// Send sends the message to an actor with the given ID.
@@ -77,7 +77,7 @@ type System interface {
 	Send(id ID, message Message) error
 
 	// CurrentActors returns IDs of the actors currently running
-	// at the system.
+	// in the system.
 	CurrentActors() []ID
 
 	// MailboxSize return the number of currently pending messages
@@ -246,7 +246,7 @@ type (
 		heartbeatInterval time.Duration
 	}
 
-	// SpawnOption represents an option when spawning an actor at the system.
+	// SpawnOption represents an option when spawning an actor within the system.
 	SpawnOption func(*spawnOptions)
 )
 
